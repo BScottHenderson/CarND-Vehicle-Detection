@@ -27,7 +27,7 @@ from scipy.ndimage.measurements import label
 # Option Flags
 #
 
-TRAIN_MODEL = True
+TRAIN_MODEL = False
 CREATE_WRITEUP_IMAGES = False
 PROCESS_TEST_IMAGES = False
 PROCESS_TEST_FRAMES = False
@@ -67,7 +67,7 @@ class SearchParameters():
         # Search only the bottom portion of an image for vehicles.
         self.y_start_stop = [400, 656]
         # Scale the image before searching for objects.
-        self.scale = 1.30
+        self.scale = 1.25
         # Search window size
         self.xy_window = (64, 64)
         # Search window overlap (percentage)
