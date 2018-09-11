@@ -27,7 +27,7 @@ from scipy.ndimage.measurements import label
 # Option Flags
 #
 
-TRAIN_MODEL = False
+TRAIN_MODEL = True
 CREATE_WRITEUP_IMAGES = False
 PROCESS_TEST_IMAGES = False
 PROCESS_TEST_FRAMES = False
@@ -36,14 +36,14 @@ WRITE_OUTPUT_FRAMES = False
 
 
 #
-# Hyperparameters
+# Hyperparameters - used to train the model
 #
 
 class Hyperparameters():
     def __init__(self):
         # HOG parameters
         self.color_space = 'YCrCb'  # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
-        self.orient = 8
+        self.orient = 48
         self.pix_per_cell = 8
         self.cells_per_block = 2
         self.hog_channel = 'ALL'  # Can be 0, 1, 2, or "ALL"
@@ -57,13 +57,21 @@ class Hyperparameters():
         self.hog_features = True
 
 
-# We don't need to look at the entire image.
-# Search only the bottom portion of an image for vehicles.
-SEARCH_YSTART = 400
-SEARCH_YSTOP = 656
+#
+# Window search parameters
+#
 
-# Scale the image before searching for objects.
-SEARCH_SCALE = 1.5
+class SearchParameters():
+    def __init__(self):
+        # We don't need to look at the entire image.
+        # Search only the bottom portion of an image for vehicles.
+        self.y_start_stop = [400, 656]
+        # Scale the image before searching for objects.
+        self.scale = 1.30
+        # Search window size
+        self.xy_window = (64, 64)
+        # Search window overlap (percentage)
+        self.xy_overlap = (0.5, 0.5)
 
 
 #
@@ -419,10 +427,7 @@ def train_model(cars, notcars, params):
 def find_cars(img,
               params,
               svc, X_scaler,
-              y_start_stop=[None, None],
-              scale=1,
-              xy_window=(64, 64),
-              xy_overlap=(0.5, 0.5)):
+              search_params):
     """
     Find potential car locations in an image.  Extract features using HOG
     subsampling and make predictions as to 'car' or 'not car'.
@@ -432,9 +437,7 @@ def find_cars(img,
         params: Model training parameters.
         svc: Trained SVC model for finding vehicles.
         X_scaler: Trained StandardScaler for image features.
-        y_start_stop: Start / stop position on the y axis
-        xy_window: Window size for x and y
-        xy_overlap: Percentage overlap between windows for the x and y axis.
+        search_params: Window search parameters
 
     Returns:
         A list of bounding boxes for potential car locations,
@@ -445,7 +448,10 @@ def find_cars(img,
 #    img_detect = np.copy(img)
 #
 #    bbox_list = []
-#    windows = slide_window(img, y_start_stop=y_start_stop, xy_window=xy_window, xy_overlap=xy_overlap)
+#    windows = slide_window(img,
+#                           y_start_stop=search_params.y_start_stop,
+#                           xy_window=search_params.xy_window,
+#                           xy_overlap=search_params.xy_overlap)
 #    for bbox in windows:
 #        img_window = cv2.resize(img[bbox[0][1]:bbox[1][1], bbox[0][0]:bbox[1][0]],
 #                                (64, 64))  # Training images are size 64x64
@@ -469,7 +475,7 @@ def find_cars(img,
     #
 
     img = img.astype(np.float32) / 255  # normalize
-    img = img[y_start_stop[0]:y_start_stop[1], :, :]  # clip
+    img = img[search_params.y_start_stop[0]:search_params.y_start_stop[1], :, :]  # clip
 
     # Apply color conversion if necessary.
     if params.color_space in ['HSV', 'LUV', 'HLS', 'YUV', 'YCrCb']:
@@ -486,12 +492,12 @@ def find_cars(img,
     else:
         feature_image = np.copy(img)
 
-    if scale != 1:
-        # scale
+    # Scale
+    if search_params.scale != 1:
         imshape = feature_image.shape
         feature_image = cv2.resize(feature_image,
-                                   (np.int(imshape[1] / scale),
-                                    np.int(imshape[0] / scale)))
+                                   (np.int(imshape[1] / search_params.scale),
+                                    np.int(imshape[0] / search_params.scale)))
 
     #
     # Initialization
@@ -513,7 +519,7 @@ def find_cars(img,
 #    nfeat_per_block = orient * cells_per_block**2
 
     # 64 was the orginal sampling rate, with 8 cells and 8 pix per cell
-    window = 64 # Should this match the MODEL_SPATIAL_SIZE parameter?
+    window = 64
     nblocks_per_window = (window // params.pix_per_cell) - params.cells_per_block + 1
     cells_per_step = 2  # Instead of overlap, define how many cells to step
     nxsteps = (nxblocks - nblocks_per_window) // cells_per_step + 1
@@ -560,11 +566,11 @@ def find_cars(img,
             # If the model indicates the presence of a car, add the bounding
             # box to our list and draw it on the return image.
             if test_prediction == 1:
-                xbox_left = np.int(xleft * scale)
-                ytop_draw = np.int(ytop * scale)
-                win_draw = np.int(window * scale)
-                bbox = ((xbox_left, ytop_draw + y_start_stop[0]),
-                        (xbox_left + win_draw, ytop_draw + win_draw + y_start_stop[0]))
+                xbox_left = np.int(xleft * search_params.scale)
+                ytop_draw = np.int(ytop * search_params.scale)
+                win_draw = np.int(window * search_params.scale)
+                bbox = ((xbox_left, ytop_draw + search_params.y_start_stop[0]),
+                        (xbox_left + win_draw, ytop_draw + win_draw + search_params.y_start_stop[0]))
                 bbox_list.append(bbox)
                 cv2.rectangle(img_detect, bbox[0], bbox[1], (0, 0, 255), 6)
 
@@ -671,19 +677,22 @@ class VehicleDetection():
     Define a class to encapsulate video processing for vehicle detection.
     """
 
-    def __init__(self, pickle_file, params):
+    def __init__(self, pickle_file, params, search_params):
         # Parameters
         self.params = None
         # Model
         self.model = None
         # StandardScaler for features
         self.scaler = None
+        # Window search parameters
+        self.search_params = None
         # Current frame number.
         self.current_frame = 0
         # Output dir for modified video frames.
         self.video_dir = None
 
         self.params = params
+        self.search_params = search_params
 
         if TRAIN_MODEL or not os.path.isfile(pickle_file):
             print('Training model ...')
@@ -901,8 +910,7 @@ class VehicleDetection():
 
         box_list, box_img = find_cars(img,
                                       self.params, self.model, self.scaler,
-                                      y_start_stop=[SEARCH_YSTART, SEARCH_YSTOP],
-                                      scale=1.5)
+                                      self.search_params)
         if vis:
             mpimg.imsave(os.path.join(output_dir, img_name[0] + '_1_bboxes') + img_name[1],
                          box_img)
@@ -944,7 +952,8 @@ def main(name):
     print()
 
     params = Hyperparameters()
-    proc = VehicleDetection('./svc_pickle.p', params)
+    search_params = SearchParameters()
+    proc = VehicleDetection('./svc_pickle.p', params, search_params)
 
     if CREATE_WRITEUP_IMAGES:
         # Get train / test data filenames

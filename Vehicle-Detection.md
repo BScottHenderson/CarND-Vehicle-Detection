@@ -45,7 +45,7 @@ All code for this project is in the Python script file "./Vehicle-Detection.py".
 
 #### 1. Explain how (and identify where in your code) you extracted HOG features from the training images.
 
-HOG features were extracted using the `get_hog_features()` function, lines 139-174. This is really just a call to the `skimage.feature.hog` function with parameters set by trial and error. This is certainly one area for improvement. See notes at the end of this writeup.
+HOG features were extracted using the `get_hog_features()` function, lines 147-182. This is really just a call to the `skimage.feature.hog` function with parameters set by trial and error. This is certainly one area for improvement. See notes at the end of this writeup.
 
 I started by reading in all the `vehicle` and `non-vehicle` images.  Here is an example of one of each of the `vehicle` and `non-vehicle` classes:
 
@@ -70,17 +70,23 @@ I tried various values more or less at random for the color space, # of orientat
 
 In order to make it easier to pass parameters around and to ensure consistency between parameters used for model training and for prediction with the trained model, I created a Python class to hold the final parameter values, lines 42-57.
 
+I found that using some color spaces, e.g., 'HSL', 'YUV', I either got far too many "hits" in that the model predicts cars everywhere or I encountered a crash due to invalid values in trying to fit the StandardScaler object. So in the end I used the 'YCrCb' color space. As for the numeric parameters, I simply tried various values more or less at random until I found values that worked sort of OK. I did notice that increasing the number of orientations seemed to provide a better fit and reduce false positives so I ended up with a fairly high number for this parameter.
+
 #### 3. Describe how (and identify where in your code) you trained a classifier using your selected HOG features (and color features if you used them).
 
 I used a linear SVM model for this project since that was the model used in the class demos. Training consisted of reading all vehicle and non-vehicle images from the training data set and then creating labels for each. A train/test split was made reserving 20% of the data for testing. A StandardScaler object was fitted on the training features only and then used to scale both the training features and the test features. After fitting the model the resulting accuracy on the test set was good - varying between 98% and 99%.
 
 Since I did not see this sort of accuracy in my processed test images or video frames I conclude that there are issues with my implementation of the window search. Yet another area for improvement.
 
+I used a combination of spatially binned color features, color histogram features and HOG features extracted from the training data.  For the most part I did not modify the hyperparameters except for the HOG feature parameters. See previous paragraph.
+
 ### Sliding Window Search
 
 #### 1. Describe how (and identify where in your code) you implemented a sliding window search.  How did you decide what scales to search and how much to overlap windows?
 
-I tried a couple of different approaches to implementin a sliding window search. I started with the sample code in the `find_cars()` function given in the class lectures. This worked for the most part but was not particularly satisfactory. I then attempted to use the `search_windows()` function from one of the class quizes but this proved even less satisfactory. In the end my implementation is basically the `find_cars()` function from the class lecture, lines 415-461.
+I tried a couple of different approaches to implementing a sliding window search. I started with the sample code in the `find_cars()` function given in the class lectures. This worked for the most part but was not particularly satisfactory. I then attempted to use the `search_windows()` function from one of the class quizes but this proved even less satisfactory. In the end my implementation is basically the `find_cars()` function from the class lecture, lines 423-577.
+
+I tried various values for the `scale` parameter in the `find_cars()` algorithm. I noted that smaller values took significantly longer to process but did not particularly improve results. Also higher values processed much faster but results were even worse. The default value of 1.5 sort of worked but I ended up using a slightly smaller (but still > 1.0) value as this seemed to reduce the number of false positive results a bit - even after the heatmap approach to removing false positives.
 
 ![alt text][image3]
 
@@ -117,7 +123,7 @@ Here's a [link to my video result](./project_video_vehicles.mp4)
 
 I recorded the positions of positive detections in each frame of the video.  From the positive detections I created a heatmap and then thresholded that map to identify vehicle positions.  I then used `scipy.ndimage.measurements.label()` to identify individual blobs in the heatmap.  I then assumed each blob corresponded to a vehicle.  I constructed bounding boxes to cover the area of each blob detected.
 
-As mentioned above this is just the code from the class lecture, lines lines 574-662.
+As mentioned above this is just the code from the class lecture, lines 580-668. The basic idea is to construct a heatmap where the "heat" represents the number of bounding boxes that contain a given pixel. Once the heatmap is constructed a threshold is applied - I just used the default value of 1 - to filter out false positives. So that pixels that are not contained in at least `threshold` bounding boxes are discarded. The final step is to translate the labeled heatmap (see previous paragraph) back to bounding boxes that now represent vehicle locations.
 
 ---
 
